@@ -1,0 +1,20 @@
+# Environment variables and API keys
+.env
+
+# Temporary audio files
+*.mp3
+
+# Python bytecode and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor specific configurations
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
