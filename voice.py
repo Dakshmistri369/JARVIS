@@ -16,6 +16,9 @@ class VoicePipeline:
         self.stop_speech_event = threading.Event()
         self.current_alias = None
         
+        self.mic_ready = False
+        self.is_calibrating = False
+        
         self.tts_engine = None
         self.use_sapi = False
 
@@ -105,6 +108,40 @@ class VoicePipeline:
         if self.gui_queue:
             self.gui_queue.put(("status", "STANDBY"))
 
+    def _start_interrupt_listener(self):
+        """Start a background listener to detect interrupt voice commands while speaking."""
+        if not self.mic or not getattr(self, "mic_ready", False) or getattr(self, "is_calibrating", False):
+            return None
+
+        def callback(recognizer, audio):
+            try:
+                # Recognize English using Google API
+                phrase = recognizer.recognize_google(audio, language="en-IN").strip().lower()
+                if any(w in phrase for w in ["skip it", "skip", "stop speaking", "stop", "shutup", "quiet"]):
+                    print(f"\n[!] Voice Interrupt Detected: '{phrase}'. Halting speech.")
+                    self.stop_speaking()
+                    return
+            except Exception:
+                pass
+
+            try:
+                # Recognize Gujarati using Google API
+                phrase_gu = recognizer.recognize_google(audio, language="gu-IN").strip().lower()
+                if any(w in phrase_gu for w in ["સ્કીપ", "શાંત થાઓ", "બંધ કર"]):
+                    print(f"\n[!] Voice Interrupt Detected (Gujarati): '{phrase_gu}'. Halting speech.")
+                    self.stop_speaking()
+                    return
+            except Exception:
+                pass
+
+        try:
+            # Start background thread (limit phrase time to 2 seconds for quick response)
+            stop_listening = self.recognizer.listen_in_background(self.mic, callback, phrase_time_limit=2)
+            return stop_listening
+        except Exception as e:
+            print(f"[!] Warning: Failed to start background voice interrupt listener: {e}")
+            return None
+
     def speak(self, text: str):
         """Output text to console and synthesize speech in English or Gujarati."""
         print(f"\nJARVIS: {text}")
@@ -131,114 +168,137 @@ class VoicePipeline:
                 self.gui_queue.put(("status", "STANDBY"))
             return
 
-        # Try Google TTS for premium natural bilingual speech
+        # Start voice interrupt listener in background
+        stop_listening = self._start_interrupt_listener()
+
         try:
-            from gtts import gTTS
-            import ctypes
-            
-            # Generate unique path and alias based on timestamp to avoid WinError 32 resource locks
-            timestamp = int(time.time() * 1000)
-            temp_filename = f"temp_speech_{timestamp}.mp3"
-            temp_path = os.path.abspath(temp_filename)
-            alias = f"speech_alias_{timestamp}"
-            
-            # Generate the TTS file
-            tts = gTTS(text=text, lang=lang_code, slow=False)
-            tts.save(temp_path)
-            
-            if self.stop_speech_event.is_set():
+            # Try Google TTS for premium natural bilingual speech
+            try:
+                from gtts import gTTS
+                import ctypes
+                
+                # Generate unique path and alias based on timestamp to avoid WinError 32 resource locks
+                timestamp = int(time.time() * 1000)
+                temp_filename = f"temp_speech_{timestamp}.mp3"
+                temp_path = os.path.abspath(temp_filename)
+                alias = f"speech_alias_{timestamp}"
+                
+                # Generate the TTS file
+                tts = gTTS(text=text, lang=lang_code, slow=False)
+                tts.save(temp_path)
+                
+                if self.stop_speech_event.is_set():
+                    if os.path.exists(temp_path):
+                        try:
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
+                    if self.gui_queue:
+                        self.gui_queue.put(("status", "STANDBY"))
+                    return
+
+                # Play using native Windows MCI command string (non-blocking, we poll it)
+                self.current_alias = alias
+                ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias {alias}", None, 0, 0)
+                ctypes.windll.winmm.mciSendStringW(f"play {alias}", None, 0, 0)
+                
+                # Poll status of the alias in 0.1s increments until it stops or we are interrupted
+                while not self.stop_speech_event.is_set():
+                    buffer = ctypes.create_unicode_buffer(64)
+                    ctypes.windll.winmm.mciSendStringW(f"status {alias} mode", buffer, 64, 0)
+                    status = buffer.value.strip().lower()
+                    if status != "playing":
+                        break
+                    time.sleep(0.1)
+
+                # Cleanup MCI alias
+                ctypes.windll.winmm.mciSendStringW(f"stop {alias}", None, 0, 0)
+                ctypes.windll.winmm.mciSendStringW(f"close {alias}", None, 0, 0)
+                self.current_alias = None
+                
+                # Delete temporary file safely
                 if os.path.exists(temp_path):
                     try:
                         os.remove(temp_path)
                     except Exception:
                         pass
+                    
                 if self.gui_queue:
                     self.gui_queue.put(("status", "STANDBY"))
                 return
+            except Exception as e:
+                # Fallback to local offline TTS if there's no internet connection
+                print(f"[!] Online TTS error (falling back to offline system): {e}")
+                if self.gui_queue:
+                    self.gui_queue.put(("log", f"[!] TTS Online error: {e}"))
 
-            # Play using native Windows MCI command string (non-blocking, we poll it)
-            self.current_alias = alias
-            ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias {alias}", None, 0, 0)
-            ctypes.windll.winmm.mciSendStringW(f"play {alias}", None, 0, 0)
-            
-            # Poll status of the alias in 0.1s increments until it stops or we are interrupted
-            while not self.stop_speech_event.is_set():
-                buffer = ctypes.create_unicode_buffer(64)
-                ctypes.windll.winmm.mciSendStringW(f"status {alias} mode", buffer, 64, 0)
-                status = buffer.value.strip().lower()
-                if status != "playing":
-                    break
-                time.sleep(0.1)
-
-            # Cleanup MCI alias
-            ctypes.windll.winmm.mciSendStringW(f"stop {alias}", None, 0, 0)
-            ctypes.windll.winmm.mciSendStringW(f"close {alias}", None, 0, 0)
-            self.current_alias = None
-            
-            # Delete temporary file safely
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+            # Local fallback execution
+            if not self.tts_engine:
+                if self.gui_queue:
+                    self.gui_queue.put(("status", "STANDBY"))
+                return
+            try:
+                if self.use_sapi:
+                    if not is_gujarati:
+                        if self.stop_speech_event.is_set():
+                            return
+                        # Speak asynchronously (flag 1 = SVSFlagsAsync)
+                        self.tts_engine.Speak(text, 1)
+                        # Poll SAPI status
+                        while not self.stop_speech_event.is_set():
+                            # RunningState = 2 is SRSEIsSpeaking
+                            if self.tts_engine.Status.RunningState != 2:
+                                break
+                            time.sleep(0.1)
+                        if self.stop_speech_event.is_set():
+                            self.tts_engine.Speak("", 2) # Purge
+                    else:
+                        print("[!] Offline Fallback Error: Native SAPI5 cannot speak Gujarati.")
+                        if self.gui_queue:
+                            self.gui_queue.put(("log", "[!] SAPI5 cannot speak Gujarati offline."))
+                else:
+                    if not self.stop_speech_event.is_set():
+                        self.tts_engine.say(text)
+                        self.tts_engine.runAndWait()
+            except Exception as e:
+                print(f"[!] Offline TTS speech synthesis failed: {e}")
                 
             if self.gui_queue:
                 self.gui_queue.put(("status", "STANDBY"))
-            return
-        except Exception as e:
-            # Fallback to local offline TTS if there's no internet connection
-            print(f"[!] Online TTS error (falling back to offline system): {e}")
-            if self.gui_queue:
-                self.gui_queue.put(("log", f"[!] TTS Online error: {e}"))
-
-        # Local fallback execution
-        if not self.tts_engine:
-            if self.gui_queue:
-                self.gui_queue.put(("status", "STANDBY"))
-            return
-        try:
-            if self.use_sapi:
-                if not is_gujarati:
-                    if self.stop_speech_event.is_set():
-                        return
-                    # Speak asynchronously (flag 1 = SVSFlagsAsync)
-                    self.tts_engine.Speak(text, 1)
-                    # Poll SAPI status
-                    while not self.stop_speech_event.is_set():
-                        # RunningState = 2 is SRSEIsSpeaking
-                        if self.tts_engine.Status.RunningState != 2:
-                            break
-                        time.sleep(0.1)
-                    if self.stop_speech_event.is_set():
-                        self.tts_engine.Speak("", 2) # Purge
-                else:
-                    print("[!] Offline Fallback Error: Native SAPI5 cannot speak Gujarati.")
-                    if self.gui_queue:
-                        self.gui_queue.put(("log", "[!] SAPI5 cannot speak Gujarati offline."))
-            else:
-                if not self.stop_speech_event.is_set():
-                    self.tts_engine.say(text)
-                    self.tts_engine.runAndWait()
-        except Exception as e:
-            print(f"[!] Offline TTS speech synthesis failed: {e}")
-            
-        if self.gui_queue:
-            self.gui_queue.put(("status", "STANDBY"))
+        finally:
+            # Always clean up background listener thread when exiting speak
+            if stop_listening:
+                try:
+                    stop_listening(wait_for_stop=False)
+                except Exception:
+                    pass
 
     def calibrate_microphone(self):
         """Calibrate microphone for ambient noise adjustment."""
         if not self.mic:
             return False
             
+        self.is_calibrating = True
         print("[*] Calibrating microphone for ambient noise... Please stay quiet for a moment.")
         if self.gui_queue:
             self.gui_queue.put(("log", "[*] Calibrating microphone for ambient noise..."))
-        with self.mic as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=2)
-        print("[+] Calibrated. Optimal noise threshold set.")
-        if self.gui_queue:
-            self.gui_queue.put(("log", "[+] Calibrated. Optimal noise threshold set."))
-        return True
+            
+        try:
+            # Wait for microphone stream to be released if busy
+            import time
+            start_wait = time.time()
+            while getattr(self.mic, "stream", None) is not None and (time.time() - start_wait) < 2.0:
+                time.sleep(0.05)
+                
+            with self.mic as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=2)
+            print("[+] Calibrated. Optimal noise threshold set.")
+            if self.gui_queue:
+                self.gui_queue.put(("log", "[+] Calibrated. Optimal noise threshold set."))
+            self.mic_ready = True
+            return True
+        finally:
+            self.is_calibrating = False
 
     def listen_speech(self, timeout=None, phrase_time_limit=8) -> tuple[str, str]:
         """Listen to the microphone and return (transcribed_text, lang_code)."""
@@ -266,6 +326,12 @@ class VoicePipeline:
 
         if self.gui_queue:
             self.gui_queue.put(("status", "LISTENING"))
+
+        # Wait for microphone stream to be released if busy
+        import time
+        start_wait = time.time()
+        while getattr(self.mic, "stream", None) is not None and (time.time() - start_wait) < 2.0:
+            time.sleep(0.05)
 
         with self.mic as source:
             try:
