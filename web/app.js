@@ -37,9 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start canvas chart rendering loop
     drawTelemetryChart();
     
-    // Start checking for local Python backend
+    // Start checking for local Python backend (poll every 1 second for live status sync)
     checkLocalConnection();
-    setInterval(checkLocalConnection, 3000);
+    setInterval(checkLocalConnection, 1000);
     
     // Start simulation loop (runs by default, overridden if connected)
     startSimulation();
@@ -58,14 +58,39 @@ async function checkLocalConnection() {
         
         if (response.ok) {
             const data = await response.json();
-            if (data.status === 'online' && !isLiveConnection) {
-                setLiveMode(true);
+            if (data.status === 'online') {
+                if (!isLiveConnection) {
+                    setLiveMode(true);
+                }
+                if (data.jarvis_state) {
+                    syncVisualState(data.jarvis_state);
+                }
             }
         } else {
             if (isLiveConnection) setLiveMode(false);
         }
     } catch (e) {
         if (isLiveConnection) setLiveMode(false);
+    }
+}
+
+// Synchronize browser HUD state with the physical J.A.R.V.I.S. status
+function syncVisualState(backendState) {
+    let mappedState = 'standby';
+    if (backendState === 'SPEAKING') mappedState = 'speaking';
+    else if (backendState === 'LISTENING') mappedState = 'listening';
+    else if (backendState === 'PROCESSING') mappedState = 'thinking';
+    else if (backendState === 'STANDBY') mappedState = 'standby';
+    
+    const currentStateText = brainState.innerText.trim().toUpperCase();
+    let currentUIState = 'standby';
+    if (currentStateText === 'LISTENING...') currentUIState = 'listening';
+    else if (currentStateText === 'THINKING...') currentUIState = 'thinking';
+    else if (currentStateText === 'SPEAKING...') currentUIState = 'speaking';
+    else if (currentStateText === 'STANDBY MODE') currentUIState = 'standby';
+    
+    if (mappedState !== currentUIState) {
+        setVisualState(mappedState);
     }
 }
 
@@ -228,15 +253,8 @@ async function processAgentRequest(cmdText) {
             if (response.ok) {
                 const data = await response.json();
                 addLogLine('[AGENT] Logic execution successfully completed.', 'green');
-                
-                // Set state to speaking (since the laptop is verbally confirming)
-                setVisualState('speaking');
                 addChatBubble(data.response, 'jarvis', currentLanguage);
-                
-                // Return to standby after speaking delay
-                setTimeout(() => {
-                    setVisualState('standby');
-                }, 4000);
+                // Visual state changes are synchronized dynamically via /api/status polling
                 
             } else {
                 setVisualState('standby');

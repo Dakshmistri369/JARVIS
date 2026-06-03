@@ -11,7 +11,9 @@ from voice import VoicePipeline
 
 # Global instance initialization
 print("[*] Initializing J.A.R.V.I.S. Web Server components...")
-voice = VoicePipeline()
+import queue
+dummy_queue = queue.Queue()
+voice = VoicePipeline(dummy_queue)
 agent = JarvisAgent()
 
 PORT = 8000
@@ -43,7 +45,11 @@ class JarvisAPIHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "online"}).encode("utf-8"))
+            status_data = {
+                "status": "online",
+                "jarvis_state": getattr(voice, "status", "STANDBY")
+            }
+            self.wfile.write(json.dumps(status_data).encode("utf-8"))
             return
 
         # API: Telemetry
