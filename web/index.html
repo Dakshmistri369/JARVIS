@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. System HUD Controller</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Background Overlay for grid effect -->
+    <div class="grid-overlay"></div>
+    <div class="glow-orb" id="orb-1"></div>
+    <div class="glow-orb" id="orb-2"></div>
+
+    <div class="app-container">
+        <!-- HEADER -->
+        <header>
+            <div class="logo-area">
+                <i class="fa-solid fa-microchip tech-icon"></i>
+                <div class="brand">
+                    <h1>J.A.R.V.I.S.</h1>
+                    <span class="tagline">AGENTIC LAPTOP AUTOMATION SYSTEM</span>
+                </div>
+            </div>
+            <div class="connection-status offline" id="connection-badge">
+                <span class="status-dot"></span>
+                <span class="status-text">OFFLINE (DEMO MODE)</span>
+            </div>
+        </header>
+
+        <!-- MAIN LAYOUT -->
+        <main class="hud-grid">
+            
+            <!-- LEFT COLUMN: SYSTEM TELEMETRY -->
+            <section class="hud-panel telemetry-panel">
+                <div class="panel-header">
+                    <h2><i class="fa-solid fa-gauge-high"></i> SYSTEM TELEMETRY</h2>
+                    <span class="panel-subtitle">REALTIME PC METRICS</span>
+                </div>
+                <div class="panel-content">
+                    <!-- CPU Meter -->
+                    <div class="metric-container">
+                        <div class="metric-info">
+                            <span class="metric-name">CPU LOAD</span>
+                            <span class="metric-value" id="cpu-val">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-bar cyan-glow" id="cpu-bar" style="width: 0%"></div>
+                        </div>
+                        <div class="metric-details">
+                            <span>Core Clock: Dynamic</span>
+                            <span id="cpu-status">Idle</span>
+                        </div>
+                    </div>
+
+                    <!-- RAM Meter -->
+                    <div class="metric-container">
+                        <div class="metric-info">
+                            <span class="metric-name">RAM ALLOCATION</span>
+                            <span class="metric-value" id="ram-val">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-bar green-glow" id="ram-bar" style="width: 0%"></div>
+                        </div>
+                        <div class="metric-details">
+                            <span>Type: DDR4 Virtual Memory</span>
+                            <span id="ram-status">Optimized</span>
+                        </div>
+                    </div>
+
+                    <!-- Telemetry History Canvas -->
+                    <div class="chart-container">
+                        <span class="chart-title">LOAD HISTORY (30 SECONDS)</span>
+                        <canvas id="telemetry-chart" width="280" height="90"></canvas>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <h3>QUICK COMMANDS</h3>
+                        <div class="button-grid">
+                            <button class="quick-btn" onclick="sendQuickCmd('open notepad')"><i class="fa-solid fa-file-lines"></i> Open Notepad</button>
+                            <button class="quick-btn" onclick="sendQuickCmd('open chrome')"><i class="fa-brands fa-chrome"></i> Open Chrome</button>
+                            <button class="quick-btn" onclick="sendQuickCmd('take screenshot')"><i class="fa-solid fa-camera"></i> Screenshot</button>
+                            <button class="quick-btn" onclick="sendQuickCmd('show diagnostics')"><i class="fa-solid fa-heart-pulse"></i> Diagnostics</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CENTER COLUMN: CORE HUD VISUALIZER -->
+            <section class="center-panel">
+                <!-- Status Display -->
+                <div class="hud-status-card" id="status-card">
+                    <span class="status-label">CURRENT BRAIN STATE:</span>
+                    <h3 id="brain-state">STANDBY MODE</h3>
+                    <p id="brain-subtext">Waiting for verbal wake-word or input command...</p>
+                </div>
+
+                <!-- Arc Reactor / Core Animation -->
+                <div class="core-container">
+                    <div class="core-ring core-ring-outer"></div>
+                    <div class="core-ring core-ring-middle"></div>
+                    <div class="core-ring core-ring-inner"></div>
+                    <div class="core-pulse-node" id="core-node">
+                        <i class="fa-solid fa-brain" id="core-icon"></i>
+                    </div>
+                    <!-- Audio Waveform lines -->
+                    <div class="waveform-container" id="waveform">
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                        <div class="wave-bar"></div>
+                    </div>
+                </div>
+
+                <!-- Live Chat/Response Box -->
+                <div class="chat-display-panel">
+                    <div class="bubble-title">JARVIS INTELLIGENCE FEED</div>
+                    <div class="chat-bubbles" id="chat-bubbles">
+                        <div class="chat-bubble system-bubble">
+                            <span class="bubble-time">SYSTEM ONLINE</span>
+                            <p>Cognitive loop active. If running locally on your laptop, run <code>python web_server.py</code> to connect in live control mode.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: DIAGNOSTIC LOGS & CONSOLE -->
+            <section class="hud-panel logs-panel">
+                <div class="panel-header">
+                    <h2><i class="fa-solid fa-terminal"></i> DIAGNOSTIC TERMINAL</h2>
+                    <span class="panel-subtitle">SYSTEM LOG PIPELINE</span>
+                </div>
+                <div class="panel-content flex-panel-content">
+                    <!-- Logs text area -->
+                    <div class="log-stream" id="log-stream">
+                        <div class="log-line text-cyan">[INIT] J.A.R.V.I.S Web UI Loaded.</div>
+                        <div class="log-line text-dim">[INFO] Core module checking local host connection...</div>
+                    </div>
+
+                    <!-- Config Settings inside right panel -->
+                    <div class="settings-card">
+                        <h3>HUD CONFIGURATION</h3>
+                        <div class="control-group">
+                            <label>Language Preference:</label>
+                            <div class="toggle-buttons">
+                                <button class="toggle-btn active" id="lang-en" onclick="setLanguage('en')">English</button>
+                                <button class="toggle-btn" id="lang-gu" onclick="setLanguage('gu')">ગુજરાતી</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Voice Synthesis:</label>
+                            <div class="checkbox-row">
+                                <input type="checkbox" id="mute-voice" onchange="toggleMute()">
+                                <label for="mute-voice">Mute Local Laptop Voice Output</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Terminal input box -->
+                    <div class="terminal-input-container">
+                        <div class="terminal-prompt">&gt;</div>
+                        <input type="text" id="terminal-input" placeholder="Type command in English or Gujarati..." autocomplete="off">
+                        <button class="send-btn" id="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- FOOTER INFO -->
+        <footer>
+            <span>SYSTEM ENCODING: UTF-8</span>
+            <span>BILINGUAL PROCESSING ENGINE V1.0</span>
+            <span id="local-server-ip">LOCAL SERVER: HTTP://LOCALHOST:8000</span>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
