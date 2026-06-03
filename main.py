@@ -153,6 +153,13 @@ def run_cli_mode():
                                     cmd_to_process = cmd_to_process.replace(wake, "").strip()
                             
                     if cmd_to_process:
+                        # Intercept skip or stop voice command immediately
+                        if cmd_to_process in ["skip", "skip it", "stop", "stop speaking", "quiet", "shutup", "shush", "સ્કીપ", "શાંત"]:
+                            voice.stop_speaking()
+                            mode = 'passive'
+                            print("\n[!] Voice command: Interrupted & Reverted to standby.")
+                            continue
+
                         mode = 'active'
                         last_active_time = time.time()
                         
@@ -185,6 +192,13 @@ def run_cli_mode():
             elif mode == 'active' or not mic_available:
                 last_active_time = time.time()
                 
+                # Intercept skip or stop voice command immediately
+                if clean_phrase in ["skip", "skip it", "stop", "stop speaking", "quiet", "shutup", "shush", "સ્કીપ", "શાંત"]:
+                    voice.stop_speaking()
+                    mode = 'passive'
+                    print("\n[!] Voice command: Interrupted & Reverted to standby.")
+                    continue
+
                 # Check for exit commands
                 is_exit = any(w in clean_phrase for w in ["standby", "go to sleep", "sleep", "shutdown jarvis", "exit", "બંધ", "બંધ કર", "શાંત"])
                 if is_exit:

@@ -134,6 +134,14 @@ class JarvisWorker(threading.Thread):
                                         cmd_to_process = cmd_to_process.replace(wake, "").strip()
                                         
                         if cmd_to_process:
+                            # Intercept skip or stop voice command immediately
+                            if cmd_to_process in ["skip", "skip it", "stop", "stop speaking", "quiet", "shutup", "shush", "સ્કીપ", "શાંત"]:
+                                self.voice.stop_speaking()
+                                self.mode = 'passive'
+                                self.gui_queue.put(("mode", "PASSIVE"))
+                                self.gui_queue.put(("log", "[*] Voice command: Interrupted & Reverted to standby."))
+                                continue
+
                             self.mode = 'active'
                             self.gui_queue.put(("mode", "ACTIVE"))
                             last_active_time = time.time()
@@ -170,6 +178,14 @@ class JarvisWorker(threading.Thread):
                     # Active mode or text-only fallback
                     last_active_time = time.time()
                     
+                    # Intercept skip or stop voice command immediately
+                    if clean_phrase in ["skip", "skip it", "stop", "stop speaking", "quiet", "shutup", "shush", "સ્કીપ", "શાંત"]:
+                        self.voice.stop_speaking()
+                        self.mode = 'passive'
+                        self.gui_queue.put(("mode", "PASSIVE"))
+                        self.gui_queue.put(("log", "[*] Voice command: Interrupted & Reverted to standby."))
+                        continue
+                        
                     is_exit = any(w in clean_phrase for w in ["standby", "go to sleep", "sleep", "shutdown jarvis", "exit", "બંધ", "બંધ કર", "શાંત"])
                     if is_exit:
                         if any(w in clean_phrase for w in ["shutdown jarvis", "exit", "બંધ કર", "બંધ"]):
