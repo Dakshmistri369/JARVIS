@@ -144,6 +144,30 @@ class JarvisAPIHandler(http.server.BaseHTTPRequestHandler):
                     "success": False
                 }).encode("utf-8"))
             return
+
+        # API: Skip Speech
+        elif path == "/api/skip":
+            try:
+                print("\n[*] API received skip command. Interrupting local voice...")
+                voice.stop_speaking()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": True
+                }).encode("utf-8"))
+            except Exception as e:
+                print(f"[!] Server exception handling skip: {e}")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "error": str(e),
+                    "success": False
+                }).encode("utf-8"))
+            return
             
         else:
             self.send_response(404)

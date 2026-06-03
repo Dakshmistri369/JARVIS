@@ -545,6 +545,13 @@ class JarvisGUI(ctk.CTk):
         self.cmd_entry.delete(0, "end")
         self.gui_queue.put(("log", f"[*] GUI Command Sent: '{cmd}'"))
         
+        # Intercept skip and stop commands to immediately interrupt voice synthesis
+        cmd_lower = cmd.lower().strip()
+        if cmd_lower in ["skip", "skip it", "stop", "quiet", "shutup", "સ્કીપ", "શાંત"]:
+            self.gui_queue.put(("log", "[*] GUI: Skip command received. Stopping speech..."))
+            self.voice.stop_speaking()
+            return
+            
         # Put in command queue for background loop to capture immediately
         self.voice.cmd_queue.put(cmd)
 

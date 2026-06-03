@@ -12,6 +12,10 @@ class VoicePipeline:
         self.voice_muted = False
         self.pref_lang = "en"  # Default preferred language
         
+        import threading
+        self.stop_speech_event = threading.Event()
+        self.current_alias = None
+        
         self.tts_engine = None
         self.use_sapi = False
 
@@ -79,11 +83,35 @@ class VoicePipeline:
         self.tts_engine.setProperty('rate', config.VOICE_RATE)
         self.tts_engine.setProperty('volume', config.VOICE_VOLUME)
 
+    def stop_speaking(self):
+        """Immediately interrupt and stop any active speech synthesis."""
+        self.stop_speech_event.set()
+        if self.current_alias:
+            try:
+                import ctypes
+                ctypes.windll.winmm.mciSendStringW(f"stop {self.current_alias}", None, 0, 0)
+                ctypes.windll.winmm.mciSendStringW(f"close {self.current_alias}", None, 0, 0)
+            except Exception:
+                pass
+            self.current_alias = None
+        if self.tts_engine:
+            try:
+                if self.use_sapi:
+                    self.tts_engine.Speak("", 2)  # SVSFPurgeBeforeSpeak
+                else:
+                    self.tts_engine.stop()
+            except Exception:
+                pass
+        if self.gui_queue:
+            self.gui_queue.put(("status", "STANDBY"))
+
     def speak(self, text: str):
         """Output text to console and synthesize speech in English or Gujarati."""
         print(f"\nJARVIS: {text}")
         if not text.strip():
             return
+
+        self.stop_speech_event.clear()
 
         if self.gui_queue:
             self.gui_queue.put(("status", "SPEAKING"))
@@ -97,6 +125,11 @@ class VoicePipeline:
         # Check if text contains Gujarati unicode characters (\u0a80 to \u0aff)
         is_gujarati = any('\u0a80' <= char <= '\u0aff' for char in text)
         lang_code = 'gu' if is_gujarati else 'en'
+
+        if self.stop_speech_event.is_set():
+            if self.gui_queue:
+                self.gui_queue.put(("status", "STANDBY"))
+            return
 
         # Try Google TTS for premium natural bilingual speech
         try:
@@ -113,10 +146,34 @@ class VoicePipeline:
             tts = gTTS(text=text, lang=lang_code, slow=False)
             tts.save(temp_path)
             
-            # Play using native Windows MCI command string (blocks until finished via 'wait')
+            if self.stop_speech_event.is_set():
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                if self.gui_queue:
+                    self.gui_queue.put(("status", "STANDBY"))
+                return
+
+            # Play using native Windows MCI command string (non-blocking, we poll it)
+            self.current_alias = alias
             ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias {alias}", None, 0, 0)
-            ctypes.windll.winmm.mciSendStringW(f"play {alias} wait", None, 0, 0)
+            ctypes.windll.winmm.mciSendStringW(f"play {alias}", None, 0, 0)
+            
+            # Poll status of the alias in 0.1s increments until it stops or we are interrupted
+            while not self.stop_speech_event.is_set():
+                buffer = ctypes.create_unicode_buffer(64)
+                ctypes.windll.winmm.mciSendStringW(f"status {alias} mode", buffer, 64, 0)
+                status = buffer.value.strip().lower()
+                if status != "playing":
+                    break
+                time.sleep(0.1)
+
+            # Cleanup MCI alias
+            ctypes.windll.winmm.mciSendStringW(f"stop {alias}", None, 0, 0)
             ctypes.windll.winmm.mciSendStringW(f"close {alias}", None, 0, 0)
+            self.current_alias = None
             
             # Delete temporary file safely
             if os.path.exists(temp_path):
@@ -142,14 +199,26 @@ class VoicePipeline:
         try:
             if self.use_sapi:
                 if not is_gujarati:
-                    self.tts_engine.Speak(text)
+                    if self.stop_speech_event.is_set():
+                        return
+                    # Speak asynchronously (flag 1 = SVSFlagsAsync)
+                    self.tts_engine.Speak(text, 1)
+                    # Poll SAPI status
+                    while not self.stop_speech_event.is_set():
+                        # RunningState = 2 is SRSEIsSpeaking
+                        if self.tts_engine.Status.RunningState != 2:
+                            break
+                        time.sleep(0.1)
+                    if self.stop_speech_event.is_set():
+                        self.tts_engine.Speak("", 2) # Purge
                 else:
                     print("[!] Offline Fallback Error: Native SAPI5 cannot speak Gujarati.")
                     if self.gui_queue:
                         self.gui_queue.put(("log", "[!] SAPI5 cannot speak Gujarati offline."))
             else:
-                self.tts_engine.say(text)
-                self.tts_engine.runAndWait()
+                if not self.stop_speech_event.is_set():
+                    self.tts_engine.say(text)
+                    self.tts_engine.runAndWait()
         except Exception as e:
             print(f"[!] Offline TTS speech synthesis failed: {e}")
             

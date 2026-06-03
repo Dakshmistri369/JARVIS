@@ -183,6 +183,31 @@ async function processAgentRequest(cmdText) {
     addChatBubble(cmdText, 'user', currentLanguage);
     addLogLine(`[CMD] Received command: "${cmdText}"`, 'cyan');
     
+    // Check for skip command immediately to interrupt active speaking
+    const lowerCmd = cmdText.toLowerCase().trim();
+    if (lowerCmd === 'skip' || lowerCmd === 'skip it' || lowerCmd === 'stop' || lowerCmd === 'quiet' || lowerCmd === 'સ્કીપ') {
+        addLogLine('[CMD] Skip command received. Stopping speech synthesis...', 'cyan');
+        setVisualState('standby');
+        
+        // Stop browser speech synthesis
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+        
+        // Stop local laptop speech synthesis if connected
+        if (isLiveConnection) {
+            try {
+                await fetch(`${localServerUrl}/api/skip`, {
+                    method: 'POST',
+                    mode: 'cors'
+                });
+            } catch (e) {
+                // Ignore network errors
+            }
+        }
+        return;
+    }
+
     // Set visual state to thinking
     setVisualState('thinking');
     
