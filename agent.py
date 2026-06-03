@@ -46,9 +46,9 @@ class JarvisAgent:
             return
             
         try:
-            # We use gemini-3.5-flash as it is the model configured for your API environment.
+            # We use gemini-2.5-flash as it is the model configured for your API environment.
             self.model = genai.GenerativeModel(
-                model_name="gemini-3.5-flash",
+                model_name="gemini-2.5-flash",
                 tools=self.tools,
                 system_instruction=config.SYSTEM_PROMPT,
                 generation_config=self.generation_config
